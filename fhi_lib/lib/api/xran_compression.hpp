@@ -1,20 +1,20 @@
 /******************************************************************************
-*
-*   Copyright (c) 2020 Intel.
-*
-*   Licensed under the Apache License, Version 2.0 (the "License");
-*   you may not use this file except in compliance with the License.
-*   You may obtain a copy of the License at
-*
-*       http://www.apache.org/licenses/LICENSE-2.0
-*
-*   Unless required by applicable law or agreed to in writing, software
-*   distributed under the License is distributed on an "AS IS" BASIS,
-*   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-*   See the License for the specific language governing permissions and
-*   limitations under the License.
-*
-*******************************************************************************/
+ *
+ *   Copyright (c) 2020 Intel.
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ *   You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *   Unless required by applicable law or agreed to in writing, software
+ *   distributed under the License is distributed on an "AS IS" BASIS,
+ *   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *   See the License for the specific language governing permissions and
+ *   limitations under the License.
+ *
+ *******************************************************************************/
 
 #pragma once
 #include <stdint.h>
@@ -45,102 +45,97 @@ constexpr unsigned k_cacheByteAlignment = 64;
 /// header. Templates are used throughout this project's source files to define local type-specific
 /// versions of functions. Defining every one of these in a header is unnecessary, so the warnings
 /// about this are turned off globally.
-#pragma warning(disable:1418)
-#pragma warning(disable:1419)
+#pragma warning(disable: 1418)
+#pragma warning(disable: 1419)
 
+namespace BlockFloatCompander {
+/// Compute 32 RB at a time
+static constexpr int k_numBitsIQ = 16;
+static constexpr int k_numBitsIQPair = 2 * k_numBitsIQ;
+static constexpr int k_maxNumBlocks = 16;
+static constexpr int k_maxNumElements = 128;
+static constexpr int k_numSampsExpanded = k_maxNumBlocks * k_maxNumElements;
+static constexpr int k_numSampsCompressed = (k_numSampsExpanded * 2) + k_maxNumBlocks;
 
-namespace BlockFloatCompander
-{
-  /// Compute 32 RB at a time
-  static constexpr int k_numBitsIQ = 16;
-  static constexpr int k_numBitsIQPair = 2 * k_numBitsIQ;
-  static constexpr int k_maxNumBlocks = 16;
-  static constexpr int k_maxNumElements = 128;
-  static constexpr int k_numSampsExpanded = k_maxNumBlocks * k_maxNumElements;
-  static constexpr int k_numSampsCompressed = (k_numSampsExpanded * 2) + k_maxNumBlocks;
+struct CompressedData {
+  /// Pointer to compressed data buffer
+  CACHE_ALIGNED uint8_t dataCompressedDataOut[k_numSampsCompressed];
+  CACHE_ALIGNED uint8_t* dataCompressed;
+  /// Size of mantissa including sign bit
+  int iqWidth;
 
-  struct CompressedData
-  {
-    /// Pointer to compressed data buffer
-    CACHE_ALIGNED uint8_t dataCompressedDataOut[k_numSampsCompressed];
-    CACHE_ALIGNED uint8_t *dataCompressed;
-    /// Size of mantissa including sign bit
-    int iqWidth;
+  /// Number of BFP blocks in message
+  int numBlocks;
 
-    /// Number of BFP blocks in message
-    int numBlocks;
+  /// Number of data elements per compression block (only required for reference function)
+  int numDataElements;
+};
 
-    /// Number of data elements per compression block (only required for reference function)
-    int numDataElements;
-  };
+struct ExpandedData {
+  /// Pointer to expanded data buffer
+  CACHE_ALIGNED int16_t dataExpandedIn[k_numSampsExpanded];
+  CACHE_ALIGNED int16_t* dataExpanded;
 
-  struct ExpandedData
-  {
-    /// Pointer to expanded data buffer
-    CACHE_ALIGNED int16_t dataExpandedIn[k_numSampsExpanded];
-    CACHE_ALIGNED int16_t *dataExpanded;
+  /// Size of mantissa including sign bit
+  int iqWidth;
 
-    /// Size of mantissa including sign bit
-    int iqWidth;
+  /// Number of BFP blocks in message
+  int numBlocks;
 
-    /// Number of BFP blocks in message
-    int numBlocks;
+  /// Number of data elements per compression block (only required for reference function)
+  int numDataElements;
+};
 
-    /// Number of data elements per compression block (only required for reference function)
-    int numDataElements;
-  };
+/// Reference compression and expansion functions
+void BFPCompressRef(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandRef(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Reference compression and expansion functions
-  void BFPCompressRef(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandRef(const CompressedData& dataIn, ExpandedData* dataOut);
+/// User-Plane specific compression and expansion functions 9b Matissa 16RB ONLY
+void BFPCompressUserPlaneAvx512_9b16RB(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandUserPlaneAvx512_9b16RB(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// User-Plane specific compression and expansion functions 9b Matissa 16RB ONLY
-  void BFPCompressUserPlaneAvx512_9b16RB(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandUserPlaneAvx512_9b16RB(const CompressedData& dataIn, ExpandedData* dataOut);
+/// User-Plane specific compression and expansion functions
+void BFPCompressUserPlaneAvx512(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandUserPlaneAvx512(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// User-Plane specific compression and expansion functions
-  void BFPCompressUserPlaneAvx512(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandUserPlaneAvx512(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 8 antennas
+void BFPCompressCtrlPlane8Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane8Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 8 antennas
-  void BFPCompressCtrlPlane8Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane8Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 16 antennas
+void BFPCompressCtrlPlane16Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane16Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 16 antennas
-  void BFPCompressCtrlPlane16Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane16Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 32 antennas
+void BFPCompressCtrlPlane32Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane32Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 32 antennas
-  void BFPCompressCtrlPlane32Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane32Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 64 antennas
+void BFPCompressCtrlPlane64Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane64Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 64 antennas
-  void BFPCompressCtrlPlane64Avx512(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane64Avx512(const CompressedData& dataIn, ExpandedData* dataOut);
+/// User-Plane specific compression and expansion functions
+void BFPCompressUserPlaneAvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandUserPlaneAvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
 
+/// Control-Plane specific compression and expansion functions for 8 antennas
+void BFPCompressCtrlPlane8AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane8AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// User-Plane specific compression and expansion functions
-  void BFPCompressUserPlaneAvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandUserPlaneAvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 16 antennas
+void BFPCompressCtrlPlane16AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane16AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 8 antennas
-  void BFPCompressCtrlPlane8AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane8AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 32 antennas
+void BFPCompressCtrlPlane32AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane32AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
 
-  /// Control-Plane specific compression and expansion functions for 16 antennas
-  void BFPCompressCtrlPlane16AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane16AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
-
-  /// Control-Plane specific compression and expansion functions for 32 antennas
-  void BFPCompressCtrlPlane32AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane32AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
-
-  /// Control-Plane specific compression and expansion functions for 64 antennas
-  void BFPCompressCtrlPlane64AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
-  void BFPExpandCtrlPlane64AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
+/// Control-Plane specific compression and expansion functions for 64 antennas
+void BFPCompressCtrlPlane64AvxSnc(const ExpandedData& dataIn, CompressedData* dataOut);
+void BFPExpandCtrlPlane64AvxSnc(const CompressedData& dataIn, ExpandedData* dataOut);
 
 #ifdef _BBLIB_SPR_
-  void BFPExpandUserPlaneSpr(const CompressedData& dataIn, ExpandedData* dataOut, float fScale);
-  void BFPExpandRefSpr(const CompressedData& dataIn, ExpandedData* dataOut, float fScale);
+void BFPExpandUserPlaneSpr(const CompressedData& dataIn, ExpandedData* dataOut, float fScale);
+void BFPExpandRefSpr(const CompressedData& dataIn, ExpandedData* dataOut, float fScale);
 #endif
-}
+} // namespace BlockFloatCompander
