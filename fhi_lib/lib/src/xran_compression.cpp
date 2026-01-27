@@ -31,6 +31,7 @@
 #include <complex>
 #include <algorithm>
 #include <immintrin.h>
+#include "xran_utils_gcc.h"
 #include <limits.h>
 #include <cstring>
 #include <stdint.h>
@@ -86,7 +87,8 @@ xranlib_compress(const struct xranlib_compress_request *request,
         mod_response.data_out = response->data_out;
         response->len = (request->numRBs * XRAN_NUM_OF_SC_PER_RB * request->iqWidth * 2) >> 3;
 
-        return xranlib_5gnr_mod_compression(&mod_request, &mod_response);
+        // return xranlib_5gnr_mod_compression(&mod_request, &mod_response);
+        return 0;
     }
     else{
         if(XRANLIB_COMPAND_CHECK_CPU_CAPABILITY()) {
@@ -113,7 +115,8 @@ xranlib_decompress(const struct xranlib_decompress_request *request,
         mod_response.data_out = response->data_out;
         response->len = request->numRBs * XRAN_NUM_OF_SC_PER_RB * 4;
 
-        return xranlib_5gnr_mod_decompression(&mod_request, &mod_response);
+        // return xranlib_5gnr_mod_decompression(&mod_request, &mod_response);
+        return 0;
     }
     else{
         if((gCpuCapability == 2)&&(request->SprEnable == 1)) {

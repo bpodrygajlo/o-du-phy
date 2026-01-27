@@ -894,7 +894,7 @@ namespace BlockFloatCompander
 
     /// Mask to zero unwanted bits
     const __m256i k_expMask = _mm256_set1_epi16(0xFFFC);
-    return _mm256_and_epi64(compDataCombined, k_expMask);
+    return _mm256_and_si256(compDataCombined, k_expMask);
   }
 
 }

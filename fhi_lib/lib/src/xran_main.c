@@ -37,6 +37,7 @@
 #include <pthread.h>
 #include <malloc.h>
 #include <immintrin.h>
+#include "xran_utils_gcc.h"
 #include <numa.h>
 #include <rte_common.h>
 #include <rte_eal.h>
