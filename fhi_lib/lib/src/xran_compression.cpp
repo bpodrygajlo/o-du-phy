@@ -31,6 +31,7 @@
 #include <complex>
 #include <algorithm>
 #include <immintrin.h>
+#include "xran_utils_gcc.h"
 #include <limits.h>
 #include <cstring>
 
