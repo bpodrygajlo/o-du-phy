@@ -76,6 +76,7 @@
 #include "xran_rx_proc.h"
 #include "xran_cb_proc.h"
 #include "xran_ecpri_owd_measurements.h"
+#include "xran_bypass_internal.h"
 
 #include "xran_mlog_lnx.h"
 
@@ -2354,9 +2355,35 @@ int32_t xran_handle_rx_pkts(struct rte_mbuf *pkt_q[], uint16_t xport_id, struct 
         rte_pktmbuf_free(pkt_data[i]);
     }
   } else {
+    int numMUs = p_dev_ctx->fh_cfg.numMUs;
+    struct xran_sense_of_time sense_of_time[numMUs];
+    if (is_bypass_enabled()) {
+      for (int i = 0; i < numMUs; i++) {
+        int mu = p_dev_ctx->fh_cfg.mu_number[i];
+        int32_t slots = xran_lib_ota_sym_idx_mu[mu] / XRAN_NUM_OF_SYMBOL_PER_SLOT;
+        int num_slots_per_frame = 10 << mu;
+        int num_slots_per_subframe = 1 << mu;
+        int frame = slots / num_slots_per_frame;
+        int subframe = (slots % num_slots_per_frame) / num_slots_per_subframe;
+        int slot = slots - frame * num_slots_per_frame - subframe * num_slots_per_subframe;
+        int symbol = xran_lib_ota_sym_idx_mu[mu] % XRAN_NUM_OF_SYMBOL_PER_SLOT;
+        sense_of_time[i].tti_counter = xran_lib_ota_sym_idx_mu[mu];
+        sense_of_time[i].nFrameIdx = xran_getSfnSecStart() + frame;
+        sense_of_time[i].nSymIdx = symbol;
+        sense_of_time[i].nSubframeIdx = subframe;
+        sense_of_time[i].nSlotIdx = slot;
+        sense_of_time[i].type_of_event = XRAN_CB_SYM_OTA_TIME;
+        sense_of_time[i].nSecond = xran_timingsource_get_current_second();
+      }
+    }
     // uint64_t tt1 = MLogXRANTick();
     for (i = 0; i < num_data; ++i) {
-      ret = process_mbuf(pkt_data[i], (void *)p_dev_ctx, p_cid);
+      if (is_bypass_enabled()) {
+        bypass_process_uplane(pkt_data[i], p_cid, xport_id, sense_of_time);
+        ret = MBUF_KEEP;
+      } else {
+        ret = process_mbuf(pkt_data[i], (void *)p_dev_ctx, p_cid);
+      }
       if (ret == MBUF_FREE)
         rte_pktmbuf_free(pkt_data[i]);
     }
@@ -2364,7 +2391,12 @@ int32_t xran_handle_rx_pkts(struct rte_mbuf *pkt_q[], uint16_t xport_id, struct 
     if (xran_get_syscfg_appmode() == O_RU) {
       for (i = 0; i < num_control; ++i) {
         t1 = MLogXRANTick();
-        ret = process_cplane(pkt_control[i], (void *)p_dev_ctx);
+        if (is_bypass_enabled()) {
+          ret = MBUF_KEEP;
+          bypass_process_cplane(pkt_control[i], xport_id, sense_of_time);
+        } else {
+          ret = process_cplane(pkt_control[i], (void *)p_dev_ctx);
+        }
         ++p_dev_ctx->fh_counters.rx_counter;
         if (ret == MBUF_FREE)
           rte_pktmbuf_free(pkt_control[i]);
@@ -4914,10 +4946,12 @@ int32_t xran_start(void *pHandle)
 
         for (j = 0; j < pDevCtx_port->fh_cfg.numMUs; j++) {
           mu = pDevCtx_port->fh_cfg.mu_number[j];
-          struct xran_prb_map *prbMap0 =
-              (struct xran_prb_map *)pDevCtx_port->perMu[mu].sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers->pData;
-          for (i = 0; i < XRAN_MAX_SECTIONS_PER_SLOT && i < prbMap0->nPrbElm; i++)
-            pDevCtx_port->perMu[mu].numSetBFWs_arr[i] = prbMap0->prbMap[i].bf_weight.numSetBFWs;
+          if (pDevCtx_port->perMu[mu].sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers) {
+            struct xran_prb_map *prbMap0 =
+                (struct xran_prb_map *)pDevCtx_port->perMu[mu].sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers->pData;
+            for (i = 0; i < XRAN_MAX_SECTIONS_PER_SLOT && i < prbMap0->nPrbElm; i++)
+              pDevCtx_port->perMu[mu].numSetBFWs_arr[i] = prbMap0->prbMap[i].bf_weight.numSetBFWs;
+          }
         }
       }
     }

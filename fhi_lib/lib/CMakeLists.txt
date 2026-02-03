@@ -38,6 +38,7 @@ set(XRAN_SOURCES
     src/xran_bfp_cplane64_snc.cpp
     src/xran_bfp_uplane_snc.cpp
     src/xran_bfp_uplane_spr.cpp
+    src/xran_bypass.c
 )
 
 if(XRAN_LIB_SO)
