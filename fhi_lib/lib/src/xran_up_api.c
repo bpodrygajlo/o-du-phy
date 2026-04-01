@@ -25,7 +25,11 @@
  *
  **/
 #include <inttypes.h>
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
+#include <rte_mbuf.h>
 #include <rte_mbuf.h>
 
 #include "xran_fh_o_du.h"
@@ -336,6 +340,7 @@ int32_t xran_extract_iq_samples(struct rte_mbuf *mbuf,
     uint8_t *subframe_id,
     uint8_t *slot_id,
     uint8_t *symb_id,
+    uint8_t *filter_id,
     union ecpri_seq_id *seq_id,
     uint16_t *num_prbu,
     uint16_t *start_prbu,
@@ -345,7 +350,8 @@ int32_t xran_extract_iq_samples(struct rte_mbuf *mbuf,
     int8_t   expect_comp,
     enum xran_comp_hdr_type staticComp,
     uint8_t *compMeth,
-    uint8_t *iqWidth)
+    uint8_t *iqWidth,
+    uint8_t *is_prach)
 {
 #if XRAN_MLOG_VAR
     uint32_t mlogVar[10];
@@ -381,6 +387,7 @@ int32_t xran_extract_iq_samples(struct rte_mbuf *mbuf,
         return 0;       /* packet too short */
 
     radio_hdr->sf_slot_sym.value = rte_be_to_cpu_16(radio_hdr->sf_slot_sym.value);
+    *is_prach = (radio_hdr->data_feature.filter_id > 0);
 
     if (frame_id)
         *frame_id    = radio_hdr->frame_id;
@@ -393,6 +400,9 @@ int32_t xran_extract_iq_samples(struct rte_mbuf *mbuf,
 
     if (symb_id)
         *symb_id = radio_hdr->sf_slot_sym.symb_id;
+
+    if (filter_id)
+	    *filter_id = radio_hdr->data_feature.filter_id;
 
     /* Process data section hdr */
     struct data_section_hdr *data_hdr =

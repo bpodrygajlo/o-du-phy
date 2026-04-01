@@ -518,5 +518,3 @@ int32_t xran_fs_get_symbol_type(uint32_t PortId, int32_t nCellIdx, int32_t nSlot
 
     return xran_fs_slot_symb_type[PortId][nCellIdx][nSfIdxMod][nSymbIdx];
 }
-
-

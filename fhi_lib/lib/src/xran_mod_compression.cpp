@@ -747,9 +747,9 @@ int xranlib_5gnr_mod_compression(const struct xranlib_5gnr_mod_compression_reque
 #ifdef C_Module_Used
     return (xranlib_5gnr_mod_compression_c(request, response));
 #else
-    if(_may_i_use_cpu_feature(_FEATURE_AVX512IFMA52))
+    if (false) {
         return (xranlib_5gnr_mod_compression_snc(request, response));
-    else
+    } else {
         return (xranlib_5gnr_mod_compression_avx512(request, response));
 #endif
 }

@@ -254,6 +254,11 @@ struct __rte_cache_aligned xran_device_ctx
     int32_t sym_up; /**< when we start sym 0 of up with respect to OTA time as measured in symbols */
     int32_t sym_up_ul;
 
+    /* used to support large T1a/Ta4 values */
+    int32_t offset_num_slots_cp_dl;
+    int32_t offset_num_slots_cp_ul;
+    int32_t offset_num_slots_up_ul;
+
     xran_fh_tti_callback_fn ttiCb[XRAN_CB_MAX];
     void *TtiCbParam[XRAN_CB_MAX];
     uint32_t SkipTti[XRAN_CB_MAX];

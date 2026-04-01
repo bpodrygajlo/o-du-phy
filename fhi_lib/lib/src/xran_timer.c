@@ -29,7 +29,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#if defined(__arm__) || defined(__aarch64__)
+#include <arm_neon.h>
+#else
 #include <immintrin.h>
+#endif
 #include "xran_timer.h"
 #include "xran_printf.h"
 #include "xran_mlog_lnx.h"
@@ -141,12 +145,30 @@ void timing_adjust_gps_second(struct timespec* p_time)
 
     return;
 }
+#if defined(__x86_64__)
 uint64_t xran_tick(void)
 {
     uint32_t hi, lo;
     __asm volatile ("rdtsc" : "=a"(lo), "=d"(hi));
     return ( (uint64_t)lo)|( ((uint64_t)hi)<<32 );
 }
+#elif defined(__aarch64__)
+#include <sys/time.h>
+uint64_t xran_tick(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+}
+#elif defined(__arm__)
+#include <time.h>
+uint64_t xran_tick(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+#else
+#error "Unsupported architecture"
+#endif
 
 unsigned long get_ticks_diff(unsigned long curr_tick, unsigned long last_tick)
 {

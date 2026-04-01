@@ -25,7 +25,10 @@
 
 #include <unistd.h>
 #include <stdio.h>
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
 #include <rte_common.h>
 #include <rte_eal.h>
 #include <rte_errno.h>
@@ -105,6 +108,12 @@ void xran_timer_arm_for_deadline(struct rte_timer *tim, void* arg,  void *p_dev_
     rx_tti = nFrameIdx*SUBFRAMES_PER_SYSTEMFRAME*SLOTNUM_PER_SUBFRAME(p_xran_dev_ctx->interval_us_local)
            + nSubframeIdx*SLOTNUM_PER_SUBFRAME(p_xran_dev_ctx->interval_us_local)
            + nSlotIdx;
+
+    /* correction to rx_tti for Ta4 values larger than a TTI */
+    rx_tti -= p_xran_dev_ctx->offset_num_slots_up_ul;
+    if (rx_tti < 0) {
+        rx_tti += (SUBFRAMES_PER_SYSTEMFRAME*SLOTNUM_PER_SUBFRAME(p_xran_dev_ctx->interval_us_local)*1024);
+    }
 
     p_xran_dev_ctx->cb_timer_ctx[p_xran_dev_ctx->timer_put %  MAX_CB_TIMER_CTX].tti_to_process = rx_tti;
     if (xran_if_current_state == XRAN_RUNNING){
@@ -195,6 +204,7 @@ xran_timing_create_cbs(void *args)
             max_dl_delay_offset += interval_us_local;
             numSlots++;
         }
+        p_dev_ctx->offset_num_slots_cp_dl = numSlots;
 
         /* Delay from start of 'a' slot */
         delay_cp_dl_max = max_dl_delay_offset - p_dev_ctx->fh_cfg.T1a_max_cp_dl;
@@ -227,6 +237,7 @@ xran_timing_create_cbs(void *args)
             ul_delay_offset += interval_us_local;
             numSlots++;
         }
+        p_dev_ctx->offset_num_slots_cp_ul = numSlots;
         delay_cp_ul = ul_delay_offset - p_dev_ctx->fh_cfg.T1a_max_cp_ul;
         sym_cp_ul = (delay_cp_ul*1000/(interval_us_local*1000/N_SYM_PER_SLOT)+1);
         uint8_t ul_offset_sym = (numSlots+1)*N_SYM_PER_SLOT - sym_cp_ul;
@@ -242,8 +253,18 @@ xran_timing_create_cbs(void *args)
 
         delay_up    = p_dev_ctx->fh_cfg.T1a_max_up;
         time_diff_us = p_dev_ctx->fh_cfg.Ta4_max;
+        uint32_t ul_up_delay_offset=interval_us_local;
+        numSlots=0;
+        while(time_diff_us > ul_up_delay_offset) {
+            ul_up_delay_offset += interval_us_local;
+            numSlots++;
+        }
+        p_dev_ctx->offset_num_slots_up_ul = numSlots;
 
-        delay_cp2up = delay_up-delay_cp_dl_max;
+        printf("offset_num_slots_cp_dl=%d, offset_num_slots_cp_ul=%d, offset_num_slots_up_ul=%d\n",
+            p_dev_ctx->offset_num_slots_cp_dl, p_dev_ctx->offset_num_slots_cp_ul, p_dev_ctx->offset_num_slots_up_ul);
+
+        delay_cp2up = p_dev_ctx->fh_cfg.T1a_max_cp_dl - p_dev_ctx->fh_cfg.T1a_max_up;
 
 
         time_diff_nSymb = time_diff_us*1000/(interval_us_local*1000/N_SYM_PER_SLOT);

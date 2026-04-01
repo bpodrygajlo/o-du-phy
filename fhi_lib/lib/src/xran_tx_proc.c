@@ -35,7 +35,11 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <malloc.h>
+#if defined(__arm__) || defined(__aarch64__)
+#include <arm_neon.h>
+#else
 #include <immintrin.h>
+#endif
 
 #include <rte_common.h>
 #include <rte_eal.h>
@@ -1399,6 +1403,11 @@ xran_process_tx_sym_cp_on_opt(void* pHandle, uint8_t ctx_id, uint32_t tti, int32
 
             if(0!=ptr_sect_elm->cur_index)
             {
+                /* prevent xran from sending DL U-plane packets when it should not */
+                if(p_xran_dev_ctx->fh_init.io_cfg.id == O_DU && xran_fs_get_slot_type(xran_port_id, 0, tti, XRAN_SLOT_TYPE_DL) != 1)
+                {
+                    return 0;
+                }
                 num_sections = ptr_sect_elm->cur_index;
                 /* iterate C-Plane configuration to generate corresponding U-Plane */
                 vf_id = p_xran_dev_ctx->map2vf[direction][cc_id][ant_id][XRAN_UP_VF];
@@ -1514,7 +1523,11 @@ xran_process_tx_sym_cp_on_opt(void* pHandle, uint8_t ctx_id, uint32_t tti, int32
                         mb_oran_hdr_ext->buf_addr = ext_buff;
                         mb_oran_hdr_ext->buf_iova = ((struct rte_mempool_objhdr*)RTE_PTR_SUB(mb_base, rte_mempool_objhdr_size))->iova + RTE_PTR_DIFF(ext_buff, mb_base);
                         mb_oran_hdr_ext->buf_len = ext_buff_len;
+#if (RTE_VER_YEAR >= 21)
+                        mb_oran_hdr_ext->ol_flags |= RTE_MBUF_F_EXTERNAL;
+#else
                         mb_oran_hdr_ext->ol_flags |= EXT_ATTACHED_MBUF;
+#endif
                         mb_oran_hdr_ext->shinfo = p_share_data;
                         mb_oran_hdr_ext->data_off = (uint16_t)RTE_MIN((uint16_t)RTE_PKTMBUF_HEADROOM, (uint16_t)mb_oran_hdr_ext->buf_len) - rte_ether_hdr_size;
                         mb_oran_hdr_ext->data_len = (uint16_t)(mb_oran_hdr_ext->data_len + rte_ether_hdr_size);
@@ -1532,8 +1545,13 @@ xran_process_tx_sym_cp_on_opt(void* pHandle, uint8_t ctx_id, uint32_t tti, int32
 
                         /* Fill in the ethernet header. */
 #ifndef TRANSMIT_BURST
+#if (RTE_VER_YEAR >= 21)
+                        rte_eth_macaddr_get(mb_oran_hdr_ext->port, &((struct rte_ether_hdr*)pStart)->src_addr);         /* set source addr */
+                        ((struct rte_ether_hdr*)pStart)->dst_addr = eth_ctx->entities[vf_id][ID_O_RU];                  /* set dst addr */
+#else
                         rte_eth_macaddr_get(mb_oran_hdr_ext->port, &((struct rte_ether_hdr*)pStart)->s_addr);         /* set source addr */
                         ((struct rte_ether_hdr*)pStart)->d_addr = eth_ctx->entities[vf_id][ID_O_RU];                  /* set dst addr */
+#endif
                         ((struct rte_ether_hdr*)pStart)->ether_type = ETHER_TYPE_ECPRI_BE;                            /* ethertype */
 #endif
                         nPktSize = sizeof(struct rte_ether_hdr)
@@ -1878,7 +1896,11 @@ xran_process_tx_srs_cp_on(void* pHandle, uint8_t ctx_id, uint32_t tti, int32_t s
                         mb_oran_hdr_ext->buf_addr = ext_buff;
                         mb_oran_hdr_ext->buf_iova = ((struct rte_mempool_objhdr*)RTE_PTR_SUB(mb_base, rte_mempool_objhdr_size))->iova + RTE_PTR_DIFF(ext_buff, mb_base);
                         mb_oran_hdr_ext->buf_len = ext_buff_len;
+#if (RTE_VER_YEAR >= 21)
+                        mb_oran_hdr_ext->ol_flags |= RTE_MBUF_F_EXTERNAL;
+#else
                         mb_oran_hdr_ext->ol_flags |= EXT_ATTACHED_MBUF;
+#endif
                         mb_oran_hdr_ext->shinfo = p_share_data;
                         mb_oran_hdr_ext->data_off = (uint16_t)RTE_MIN((uint16_t)RTE_PKTMBUF_HEADROOM, (uint16_t)mb_oran_hdr_ext->buf_len) - rte_ether_hdr_size;
                         mb_oran_hdr_ext->data_len = (uint16_t)(mb_oran_hdr_ext->data_len + rte_ether_hdr_size);
@@ -1887,8 +1909,13 @@ xran_process_tx_srs_cp_on(void* pHandle, uint8_t ctx_id, uint32_t tti, int32_t s
                         pStart = (char*)((char*)mb_oran_hdr_ext->buf_addr + mb_oran_hdr_ext->data_off);
 
                         /* Fill in the ethernet header. */
+#if (RTE_VER_YEAR >= 21)
+                        rte_eth_macaddr_get(mb_oran_hdr_ext->port, &((struct rte_ether_hdr*)pStart)->src_addr);         /* set source addr */
+                        ((struct rte_ether_hdr*)pStart)->dst_addr = eth_ctx->entities[vf_id][ID_O_RU];                  /* set dst addr */
+#else
                         rte_eth_macaddr_get(mb_oran_hdr_ext->port, &((struct rte_ether_hdr*)pStart)->s_addr);         /* set source addr */
                         ((struct rte_ether_hdr*)pStart)->d_addr = eth_ctx->entities[vf_id][ID_O_RU];                  /* set dst addr */
+#endif
                         ((struct rte_ether_hdr*)pStart)->ether_type = ETHER_TYPE_ECPRI_BE;                            /* ethertype */
 
                         nPktSize = sizeof(struct rte_ether_hdr)

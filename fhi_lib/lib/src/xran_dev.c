@@ -35,7 +35,10 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <malloc.h>
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
 #include <rte_common.h>
 #include <rte_eal.h>
 #include <rte_errno.h>
@@ -55,6 +58,27 @@
 
 static struct xran_device_ctx *g_xran_dev_ctx[XRAN_PORTS_NUM] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 
+struct xran_device_ctx *allocate_device_ctx(size_t xran_ports_num, size_t alignment) {
+  void *ptr = NULL;
+
+#if defined(__arm__) || defined(__aarch64__)
+  // ARM-specific memory allocation
+  if (posix_memalign(&ptr, alignment, sizeof(struct xran_device_ctx) * xran_ports_num) != 0) {
+    print_err("posix_memalign: pCtx allocation error\n");
+    return NULL;
+  }
+#else
+  // Intel-specific memory allocation
+  ptr = _mm_malloc(sizeof(struct xran_device_ctx) * xran_ports_num, alignment);
+  if (ptr == NULL) {
+    print_err("_mm_malloc: pCtx allocation error\n");
+    return NULL;
+  }
+#endif
+
+  return (struct xran_device_ctx *)ptr;
+}
+
 int32_t
 xran_dev_create_ctx(uint32_t xran_ports_num)
 {
@@ -64,7 +88,7 @@ xran_dev_create_ctx(uint32_t xran_ports_num)
     if (xran_ports_num > XRAN_PORTS_NUM)
         return -1;
 
-    pCtx = (struct xran_device_ctx *) _mm_malloc(sizeof(struct xran_device_ctx)*xran_ports_num, 64);
+    pCtx = allocate_device_ctx(xran_ports_num, 64);
     if(pCtx){
         for(i = 0; i < xran_ports_num; i++){
             g_xran_dev_ctx[i] = pCtx;

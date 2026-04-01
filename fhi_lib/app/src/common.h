@@ -28,7 +28,7 @@
 #include <rte_common.h>
 #include <rte_mbuf.h>
 
-#define VERSIONX                "oran_f_release_v1.0"
+#define VERSIONX                "oran_f_release_v1.9"
 
 #define APP_O_DU  0
 #define APP_O_RU  1

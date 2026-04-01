@@ -90,7 +90,7 @@ namespace BFP_UPlane
   {
     const __m512i* rawData = reinterpret_cast<const __m512i*>(dataIn.dataExpanded);
     /// Abs
-    const auto rawDataAbs = _mm512_abs_epi16(rawData[0]);
+    const auto rawDataAbs = _mm512_abs_epi16(_mm512_loadu_epi16(rawData));
     /// No need to do a full horizontal max operation here, just do a max IQ step,
     /// compute the exponents and then use a reduce max over all exponent values. This
     /// is the fastest way to handle a single RB.
@@ -116,7 +116,7 @@ namespace BFP_UPlane
     /// Get AVX512 pointer aligned to desired RB
     const __m512i* rawDataIn = reinterpret_cast<const __m512i*>(dataIn.dataExpanded + numREOffset);
     /// Apply the exponent shift
-    const auto compData = _mm512_srai_epi16(*rawDataIn, thisExp);
+    const auto compData = _mm512_srai_epi16(_mm512_loadu_epi16(rawDataIn), thisExp);
     /// Pack compressed data network byte order
     const auto compDataBytePacked = networkBytePack(compData);
     /// Store exponent first
@@ -201,7 +201,7 @@ namespace BFP_UPlane
     /// Get AVX512 pointer aligned to desired RB
     const __m512i* rawDataIn = reinterpret_cast<const __m512i*>(dataIn.dataExpanded + numREOffset);
     /// Apply the exponent shift
-    const auto compData = _mm512_srai_epi16(*rawDataIn, thisExp);
+    const auto compData = _mm512_srai_epi16(_mm512_loadu_epi16(rawDataIn), thisExp);
     /// Store exponent first
     dataOut->dataCompressed[thisRBExpAddr] = thisExp;
     /// Now have 1 RB worth of bytes separated into 3 chunks (1 per lane)

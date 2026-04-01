@@ -62,7 +62,7 @@ xranlib_compress(const struct xranlib_compress_request *request,
         return xranlib_5gnr_mod_compression(&mod_request, &mod_response);
   }
     else{
-        if(_may_i_use_cpu_feature(_FEATURE_AVX512IFMA52)) {
+        if(false) {
             return xranlib_compress_avxsnc(request,response);
         } else {
             return xranlib_compress_avx512(request,response);
@@ -89,7 +89,7 @@ xranlib_decompress(const struct xranlib_decompress_request *request,
         return xranlib_5gnr_mod_decompression(&mod_request, &mod_response);
       }
     else{
-        if(_may_i_use_cpu_feature(_FEATURE_AVX512IFMA52)) {
+        if(false) {
             return xranlib_decompress_avxsnc(request,response);
         } else {
             return xranlib_decompress_avx512(request,response);
@@ -101,7 +101,7 @@ int32_t
 xranlib_compress_bfw(const struct xranlib_compress_request *request,
                         struct xranlib_compress_response *response)
     {
-    if(_may_i_use_cpu_feature(_FEATURE_AVX512IFMA52)) {
+    if(false) {
         return xranlib_compress_avxsnc_bfw(request,response);
     } else {
         return xranlib_compress_avx512_bfw(request,response);
@@ -112,7 +112,7 @@ int32_t
 xranlib_decompress_bfw(const struct xranlib_decompress_request *request,
     struct xranlib_decompress_response *response)
   {
-    if(_may_i_use_cpu_feature(_FEATURE_AVX512IFMA52)) {
+    if(false) {
         return xranlib_decompress_avxsnc_bfw(request,response);
     } else {
         return xranlib_decompress_avx512_bfw(request,response);

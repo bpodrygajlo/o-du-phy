@@ -31,7 +31,10 @@
 #include <sys/time.h>
 #include <time.h>
 #include <pthread.h>
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
 #include <rte_mbuf.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -714,11 +717,14 @@ process_mbuf(struct rte_mbuf *pkt, void* handle, struct xran_eaxc_info *p_cid)
     uint8_t compMeth = 0;
     uint8_t iqWidth = 0;
 
+    uint8_t is_prach = 0;
+
     int ret = MBUF_FREE;
     uint32_t mb_free = 0;
     int32_t valid_res = 0;
     int expect_comp  = (p_dev_ctx->fh_cfg.ru_conf.compMeth != XRAN_COMPMETHOD_NONE);
     enum xran_comp_hdr_type staticComp = p_dev_ctx->fh_cfg.ru_conf.xranCompHdrType;
+    uint8_t filter_id;
 
     if(first_call == 0)
         return ret;
@@ -733,9 +739,9 @@ process_mbuf(struct rte_mbuf *pkt, void* handle, struct xran_eaxc_info *p_cid)
         return MBUF_FREE;
 
     num_bytes = xran_extract_iq_samples(pkt, &iq_samp_buf,
-                                &CC_ID, &Ant_ID, &frame_id, &subframe_id, &slot_id, &symb_id, &seq,
+                                &CC_ID, &Ant_ID, &frame_id, &subframe_id, &slot_id, &symb_id, &filter_id, &seq,
                                 &num_prbu, &start_prbu, &sym_inc, &rb, &sect_id,
-                                expect_comp, staticComp, &compMeth, &iqWidth);
+                                expect_comp, staticComp, &compMeth, &iqWidth, &is_prach);
     if (num_bytes <= 0)
     {
         print_err("num_bytes is wrong [%d]\n", num_bytes);
@@ -781,10 +787,9 @@ process_mbuf(struct rte_mbuf *pkt, void* handle, struct xran_eaxc_info *p_cid)
 
     else
     {
-        valid_res = xran_pkt_validate(p_dev_ctx,
-                                pkt, iq_samp_buf, num_bytes,
-                                CC_ID, Ant_ID, frame_id, subframe_id, slot_id, symb_id,
-                                &seq, num_prbu, start_prbu, sym_inc, rb, sect_id);
+        pCnt->rx_counter++;
+        pCnt->Rx_on_time++;
+        pCnt->Total_msgs_rcvd++;
 #ifndef FCN_ADAPT
         if(valid_res != 0)
         {
@@ -807,8 +812,7 @@ process_mbuf(struct rte_mbuf *pkt, void* handle, struct xran_eaxc_info *p_cid)
             PrachCfg = &(p_dev_ctx->PrachCPConfig);
         }
 
-        if (Ant_ID >= PrachCfg->eAxC_offset && p_dev_ctx->fh_cfg.prachEnable)
-        {
+        if (/*Ant_ID >= PrachCfg->eAxC_offset &&*/p_dev_ctx->fh_cfg.prachEnable && is_prach) {
         /* PRACH packet has ruportid = num_eAxc + ant_id */
             Ant_ID -= PrachCfg->eAxC_offset;
         symbol_total_bytes[p_dev_ctx->xran_port_id][CC_ID][Ant_ID] += num_bytes;
@@ -1412,7 +1416,7 @@ int generate_cpmsg_prach(void *pHandle, struct xran_cp_gen_params *params, struc
     if(XRAN_FILTERINDEX_PRACH_ABC == pPrachCPConfig->filterIdx)
     {
     timeOffset = timeOffset >> nNumerology; //original number is Tc, convert to Ts based on mu
-    if ((slot_id == 0) || (slot_id == (SLOTNUM_PER_SUBFRAME(pxran_lib_ctx->interval_us_local) >> 1)))
+    if (startSymId > 0 && ((slot_id == 0) || (slot_id == (SLOTNUM_PER_SUBFRAME(pxran_lib_ctx->interval_us_local) >> 1))))
         timeOffset += 16;
     }
     else
@@ -1547,8 +1551,7 @@ int32_t ring_processing_func(void* args)
 
     for (i = 0; i < ctx->io_cfg.num_vfs && i < XRAN_VF_MAX; i++){
         for(qi = 0; qi < ctx->rxq_per_port[i]; qi++) {
-            if (process_ring(ctx->rx_ring[i][qi], i, qi))
-            return 0;
+            process_ring(ctx->rx_ring[i][qi],i,qi);
         }
     }
 

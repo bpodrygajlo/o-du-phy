@@ -23,7 +23,10 @@
  * @author Intel Corporation
  **/
 #define _GNU_SOURCE
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
 #include <assert.h>
 #include <err.h>
 #include <arpa/inet.h>
@@ -572,16 +575,28 @@ int xran_generate_delay_meas(uint16_t port_id, void* handle, uint8_t actionType,
     PANIC_ON(h == NULL, "mbuf prepend of ether_hdr failed");
 
     /* Fill in the ethernet header. */
+#if (RTE_VER_YEAR >= 21)
+    rte_eth_macaddr_get(port_id, &h->src_addr);          /* set source addr */
+#else
     rte_eth_macaddr_get(port_id, &h->s_addr);          /* set source addr */
+#endif
 
     if (p_xran_dev_ctx->fh_init.io_cfg.id)
     {
 //        rte_ether_addr_copy( (struct rte_ether_addr *)p_xran_dev_ctx->fh_init.p_o_du_addr[port_id],&h->d_addr);
+#if (RTE_VER_YEAR >= 21)
+        h->dst_addr = ctx->entities[port_id][ID_O_DU];   /* set dst addr */
+#else
         h->d_addr = ctx->entities[port_id][ID_O_DU];   /* set dst addr */
+#endif
     }
     else
     {
+#if (RTE_VER_YEAR >= 21)
+        h->dst_addr = ctx->entities[port_id][ID_O_RU];   /* set dst addr */
+#else
         h->d_addr = ctx->entities[port_id][ID_O_RU];   /* set dst addr */
+#endif
 //        rte_ether_addr_copy( (struct rte_ether_addr *)p_xran_dev_ctx->fh_init.p_o_ru_addr[port_id],&h->d_addr);
     }
 
@@ -752,7 +767,11 @@ int xran_generate_delay_meas(uint16_t port_id, void* handle, uint8_t actionType,
         int8_t *pa = &p_xran_dev_ctx->fh_init.p_o_du_addr[0];
         printf("DST_MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pa[0],pa[1],pa[2],pa[3],pa[4],pa[5]);
 #endif
+#if (RTE_VER_YEAR >= 21)
+        rte_ether_addr_copy((struct rte_ether_addr *)&p_xran_dev_ctx->fh_init.p_o_du_addr[0], (struct rte_ether_addr *)&h->dst_addr.addr_bytes[0]);
+#else
         rte_ether_addr_copy((struct rte_ether_addr *)&p_xran_dev_ctx->fh_init.p_o_du_addr[0], (struct rte_ether_addr *)&h->d_addr.addr_bytes[0]);
+#endif
 
     }
     else
@@ -761,13 +780,25 @@ int xran_generate_delay_meas(uint16_t port_id, void* handle, uint8_t actionType,
         int8_t *pb = &p_xran_dev_ctx->fh_init.p_o_ru_addr[0];
         printf("DST_MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pb[0],pb[1],pb[2],pb[3],pb[4],pb[5]);
 #endif
+#if (RTE_VER_YEAR >= 21)
+        rte_ether_addr_copy((struct rte_ether_addr *)&p_xran_dev_ctx->fh_init.p_o_ru_addr[0], (struct rte_ether_addr *)&h->dst_addr.addr_bytes[0]);
+#else
         rte_ether_addr_copy((struct rte_ether_addr *)&p_xran_dev_ctx->fh_init.p_o_ru_addr[0], (struct rte_ether_addr *)&h->d_addr.addr_bytes[0]);
+#endif
 
     }
 #ifdef XRAN_OWD_DEBUG_PKTS
+#if (RTE_VER_YEAR >= 21)
+    uint8_t *pc = &h->src_addr.addr_bytes[0];
+#else
     uint8_t *pc = &h->s_addr.addr_bytes[0];
+#endif
     printf(" Src MAC from packet: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pc[0],pc[1],pc[2],pc[3],pc[4],pc[5]);
+#if (RTE_VER_YEAR >= 21)
+    uint8_t *pd = &h->dst_addr.addr_bytes[0];
+#else
     uint8_t *pd = &h->d_addr.addr_bytes[0];
+#endif
     printf(" Dst MAC from packet: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pd[0],pd[1],pd[2],pd[3],pd[4],pd[5]);
 #endif
     // Copy dest address from above
@@ -862,9 +893,15 @@ int xran_process_delmeas_request(struct rte_mbuf *pkt, void* handle, struct xran
     // 11) Fill the ethernet header properly by swapping src and dest addressed from the copied frame
     eth_hdr = rte_pktmbuf_mtod(pkt1, struct rte_ether_hdr *);
     /* Swap dest and src mac addresses. */
+#if (RTE_VER_YEAR >= 21)
+    rte_ether_addr_copy(&eth_hdr->dst_addr, &addr);
+    rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
+    rte_ether_addr_copy(&addr, &eth_hdr->src_addr);
+#else
     rte_ether_addr_copy(&eth_hdr->d_addr, &addr);
     rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
     rte_ether_addr_copy(&addr, &eth_hdr->s_addr);
+#endif
     // Still need to check ol_flags state and update if necessary
     // Compute the delay td12 and save
     // Still need to define the DB to save the info and run averages
@@ -872,9 +909,17 @@ int xran_process_delmeas_request(struct rte_mbuf *pkt, void* handle, struct xran
     // 12) Send the response right away
 #ifdef XRAN_OWD_DEBUG_PKTS
     struct rte_ether_hdr *h = (struct rte_ether_hdr *)rte_pktmbuf_mtod(pkt1, struct rte_ether_hdr*);
+#if (RTE_VER_YEAR >= 21)
+    uint8_t *pc = &h->src_addr.addr_bytes[0];
+#else
     uint8_t *pc = &h->s_addr.addr_bytes[0];
+#endif
     printf(" Src MAC from packet: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pc[0],pc[1],pc[2],pc[3],pc[4],pc[5]);
+#if (RTE_VER_YEAR >= 21)
+    uint8_t *pd = &h->dst_addr.addr_bytes[0];
+#else
     uint8_t *pd = &h->d_addr.addr_bytes[0];
+#endif
     printf(" Dst MAC from packet: %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n", pd[0],pd[1],pd[2],pd[3],pd[4],pd[5]);
 //    printf("EtherType: %04"PRIx16" \n",&h->ether_type);
 #endif
@@ -1100,9 +1145,15 @@ int xran_process_delmeas_rem_request(struct rte_mbuf *pkt, void* handle, struct 
     // 9) Fill the ethernet header properly by swapping src and dest addressed from the copied frame
     eth_hdr = rte_pktmbuf_mtod(pkt1, struct rte_ether_hdr *);
     /* Swap dest and src mac addresses. */
+#if (RTE_VER_YEAR >= 21)
+    rte_ether_addr_copy(&eth_hdr->dst_addr, &addr);
+    rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
+    rte_ether_addr_copy(&addr, &eth_hdr->src_addr);
+#else
     rte_ether_addr_copy(&eth_hdr->d_addr, &addr);
     rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
     rte_ether_addr_copy(&addr, &eth_hdr->s_addr);
+#endif
     // 10) Send the response right away
     pdm  = (struct xran_ecpri_del_meas_pkt*)rte_pktmbuf_mtod_offset(pkt1, struct xran_ecpri_del_meas_pkt *, sizeof(struct rte_ether_hdr) );
     pdm->cmnhdr.bits.ecpri_payl_size	 = 10 + powdc->owdm_PlLength; // 10 correponds to the xran_ecpri_delay_meas_pl minus the dummy_bytes field which now allows the user to select the length for this field to be sent
@@ -1177,9 +1228,15 @@ int xran_process_delmeas_rem_request_w_fup(struct rte_mbuf* pkt, void* handle, s
     // 7) Fill the ethernet header properly by swapping src and dest addressed from the copied frame
     eth_hdr = rte_pktmbuf_mtod(pkt1, struct rte_ether_hdr *);
     /* Swap dest and src mac addresses. */
+#if (RTE_VER_YEAR >= 21)
+    rte_ether_addr_copy(&eth_hdr->dst_addr, &addr);
+    rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
+    rte_ether_addr_copy(&addr, &eth_hdr->src_addr);
+#else
     rte_ether_addr_copy(&eth_hdr->d_addr, &addr);
     rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
     rte_ether_addr_copy(&addr, &eth_hdr->s_addr);
+#endif
     // 8) Duplicate packet to be used for the follow up packet
     pkt2 = rte_pktmbuf_copy(pkt1, _eth_mbuf_pool, 0, UINT32_MAX);
     // 9) Record the current timestamp when the request with follow up is being sent
@@ -1283,9 +1340,15 @@ int xran_process_delmeas_follow_up(struct rte_mbuf *pkt, void* handle, struct xr
     // 9) Fill the ethernet header properly by swapping src and dest addressed from the copied frame
     eth_hdr = rte_pktmbuf_mtod(pkt1, struct rte_ether_hdr *);
     /* Swap dest and src mac addresses. */
+#if (RTE_VER_YEAR >= 21)
+    rte_ether_addr_copy(&eth_hdr->dst_addr, &addr);
+    rte_ether_addr_copy(&eth_hdr->src_addr, &eth_hdr->dst_addr);
+    rte_ether_addr_copy(&addr, &eth_hdr->src_addr);
+#else
     rte_ether_addr_copy(&eth_hdr->d_addr, &addr);
     rte_ether_addr_copy(&eth_hdr->s_addr, &eth_hdr->d_addr);
     rte_ether_addr_copy(&addr, &eth_hdr->s_addr);
+#endif
     pdm  = (struct xran_ecpri_del_meas_pkt*)rte_pktmbuf_mtod_offset(pkt1, struct xran_ecpri_del_meas_pkt *, sizeof(struct rte_ether_hdr) );
     pdm->cmnhdr.bits.ecpri_payl_size	 = 10 + powdc->owdm_PlLength; // 10 correponds to the xran_ecpri_delay_meas_pl minus the dummy_bytes field which now allows the user to select the length for this field to be sent
     pdm->cmnhdr.bits.ecpri_payl_size    = rte_cpu_to_be_16(pdm->cmnhdr.bits.ecpri_payl_size);

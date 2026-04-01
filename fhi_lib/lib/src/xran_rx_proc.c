@@ -35,7 +35,11 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <malloc.h>
+#if defined(__arm__) || defined(__aarch64__)
+#include <arm_neon.h>
+#else
 #include <immintrin.h>
+#endif
 
 #include <rte_common.h>
 #include <rte_eal.h>
@@ -537,6 +541,9 @@ int32_t xran_process_rx_sym(void *arg,
         pos = (char*) p_xran_dev_ctx->sFrontHaulRxBbuIoBufCtrl[tti % XRAN_N_FE_BUF_LEN][CC_ID][Ant_ID].sBufferList.pBuffers[symb_id].pData;
         pRbMap = (struct xran_prb_map *) p_xran_dev_ctx->sFrontHaulRxPrbMapBbuIoBufCtrl[tti % XRAN_N_FE_BUF_LEN][CC_ID][Ant_ID].sBufferList.pBuffers->pData;
         if(pRbMap){
+            if (p_xran_dev_ctx->RunSlotPrbMapBySymbolEnable) {
+              sect_id = (pRbMap->nPrbElm == XRAN_NUM_OF_SYMBOL_PER_SLOT) ? symb_id : symb_id - (XRAN_NUM_OF_SYMBOL_PER_SLOT - pRbMap->nPrbElm);
+            }
             /** Get the prb_elem_id */
             total_sections=0;
             if(pRbMap->prbMap[0].bf_weight.extType == 1)

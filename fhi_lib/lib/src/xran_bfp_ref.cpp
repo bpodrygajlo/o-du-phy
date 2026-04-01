@@ -29,6 +29,7 @@
 #include <complex>
 #include <algorithm>
 #include <limits.h>
+#include <limits>
 
 static int16_t saturateAbs(int16_t inVal)
 {

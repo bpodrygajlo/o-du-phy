@@ -37,7 +37,10 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__arm__) || defined(__aarch64__)
+#else
 #include <immintrin.h>
+#endif
 #include <numa.h>
 #include <rte_config.h>
 #include <rte_common.h>
@@ -185,14 +188,24 @@ static void check_port_link_status(uint8_t portid)
                 printf("Port %d Link Up - speed %u "
                         "Mbps - %s\n", (uint8_t)portid,
                         (unsigned)link.link_speed,
+#if (RTE_VER_YEAR >= 21)
+                        (link.link_duplex == RTE_ETH_LINK_FULL_DUPLEX) ?
+                        ("full-duplex") : ("half-duplex\n")
+#else
                         (link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-                        ("full-duplex") : ("half-duplex\n"));
+                        ("full-duplex") : ("half-duplex\n")
+#endif
+                      );
             else
                 printf("Port %d Link Down\n",
                         (uint8_t)portid);
         }
         /* clear all_ports_up flag if any link down */
+#if (RTE_VER_YEAR >= 21)
+        if (link.link_status == RTE_ETH_LINK_DOWN) {
+#else
         if (link.link_status == ETH_LINK_DOWN) {
+#endif
             all_ports_up = 0;
             break;
         }
@@ -323,10 +336,11 @@ xran_ethdi_init_dpdk_io(char *name, const struct xran_io_cfg *io_cfg,
     uint64_t nWorkerCore = 1;
     uint32_t coreNum = sysconf(_SC_NPROCESSORS_CONF);
     char bbdev_wdev[32]   = "";
+    char bbdev_vfio_vf_token[64] = "";
     char bbdev_vdev[32]   = "";
     char iova_mode[32]    = "--iova-mode=pa";
-    char socket_mem[32]   = "--socket-mem=8192";
-    char socket_limit[32] = "--socket-limit=8192";
+    char socket_mem[32]   = "--socket-mem=0";
+    char socket_limit[32] = "--socket-limit=0";
     char ring_name[32]    = "";
     int32_t xran_port = -1;
     queueid_t qi = 0;
@@ -336,8 +350,8 @@ xran_ethdi_init_dpdk_io(char *name, const struct xran_io_cfg *io_cfg,
     cpu = sched_getcpu();
     node = numa_node_of_cpu(cpu);
 
-    char *argv[] = { name, core_mask, "-n2", iova_mode, socket_mem, socket_limit, "--proc-type=auto",
-        "--file-prefix", name, "-a0000:00:00.0", bbdev_wdev, bbdev_vdev};
+    char *argv[] = { name, core_mask, "-n2", iova_mode, socket_mem, socket_limit, "--proc-type=auto", "--no-telemetry",
+        "--file-prefix", name, "-a0000:00:00.0", bbdev_wdev, bbdev_vdev, bbdev_vfio_vf_token};
 
     if (io_cfg == NULL)
         return 0;
@@ -347,11 +361,17 @@ xran_ethdi_init_dpdk_io(char *name, const struct xran_io_cfg *io_cfg,
             // hw-accelerated bbdev
             printf("hw-accelerated bbdev %s\n", io_cfg->bbdev_dev[0]);
             snprintf(bbdev_wdev, RTE_DIM(bbdev_wdev), "-a%s", io_cfg->bbdev_dev[0]);
+	    if (io_cfg->bbdev_vfio_vf_token[0] != NULL) {
+                snprintf(bbdev_vfio_vf_token, RTE_DIM(bbdev_vfio_vf_token), "--vfio-vf-token=%s", io_cfg->bbdev_vfio_vf_token[0]);
+	    }
         } else if (io_cfg->bbdev_mode == XRAN_BBDEV_MODE_HW_OFF){
             snprintf(bbdev_wdev, RTE_DIM(bbdev_wdev), "%s", "--vdev=baseband_turbo_sw");
         } else if (io_cfg->bbdev_mode == XRAN_BBDEV_MODE_HW_SW){
             printf("software and hw-accelerated bbdev %s\n", io_cfg->bbdev_dev[0]);
             snprintf(bbdev_wdev, RTE_DIM(bbdev_wdev), "-a%s", io_cfg->bbdev_dev[0]);
+	    if (io_cfg->bbdev_vfio_vf_token[0] != NULL) {
+                snprintf(bbdev_vfio_vf_token, RTE_DIM(bbdev_vfio_vf_token), "--vfio-vf-token=%s", io_cfg->bbdev_vfio_vf_token[0]);
+	    }
             snprintf(bbdev_vdev, RTE_DIM(bbdev_vdev), "%s", "--vdev=baseband_turbo_sw");
         } else {
             rte_panic("Cannot init DPDK incorrect [bbdev_mode %d]\n", io_cfg->bbdev_mode);
@@ -481,11 +501,13 @@ xran_ethdi_init_dpdk_io(char *name, const struct xran_io_cfg *io_cfg,
                     ctx->tx_ring[i] = rte_ring_create(ring_name, NUM_MBUFS_RING_TRX,
                     rte_lcore_to_socket_id(*lcore_id), RING_F_SC_DEQ);
                     PANIC_ON(ctx->tx_ring[i] == NULL, "failed to allocate rx ring");
+                    printf("Created ring %s on core %d\n",ring_name,*lcore_id);
                     for(qi = 0; qi < io_cfg->num_rxq; qi++) {
                         snprintf(ring_name, RTE_DIM(ring_name), "%s_%d_%d", "rx_ring_cp", i, qi);
                         ctx->rx_ring[i][qi] = rte_ring_create(ring_name, NUM_MBUFS_RING_TRX,
                             rte_lcore_to_socket_id(*lcore_id), RING_F_SP_ENQ);
                         PANIC_ON(ctx->rx_ring[i][qi] == NULL, "failed to allocate rx ring");
+                        printf("Created ring %s on core %d\n",ring_name,*lcore_id);
                     }
                 }
             } else {
@@ -555,7 +577,7 @@ xran_ethdi_init_dpdk_io(char *name, const struct xran_io_cfg *io_cfg,
         ctx->up_dl_pkt_gen_ring[i] = rte_ring_create(ring_name, NUM_MBUFS_RING,
         rte_lcore_to_socket_id(*lcore_id), /*RING_F_SC_DEQ*/0);
         PANIC_ON(ctx->up_dl_pkt_gen_ring[i] == NULL, "failed to allocate dl gen ring");
-        printf("created %s\n", ring_name);
+        printf("created %s on core %d\n", ring_name, *lcore_id);
     }
 
     return 1;

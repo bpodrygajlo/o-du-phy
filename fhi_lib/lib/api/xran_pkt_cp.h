@@ -33,6 +33,14 @@
 extern "C" {
 #endif
 
+#include <stdint.h>
+#if defined(__arm__) || defined(__aarch64__)
+#include <arm_neon.h>
+typedef int32x4_t simd_data_t;
+#else
+#include <xmmintrin.h>
+typedef __m128i simd_data_t;
+#endif
 
 /**********************************************************************
  * Common structures for C/U-plane
@@ -256,7 +264,7 @@ union xran_cp_radioapp_section_ext3_first {
     }all_bits;
 
     struct{
-        __m128i     data_field1;
+        simd_data_t data_field1;
     }data_field;
     } __attribute__((__packed__));
 

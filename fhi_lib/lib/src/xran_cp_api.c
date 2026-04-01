@@ -25,7 +25,11 @@
  * @author Intel Corporation
  *
  **/
+#if defined(__arm__) || defined(__aarch64__)
+#include <arm_neon.h>
+#else
 #include <immintrin.h>
+#endif
 #include <rte_branch_prediction.h>
 #include <rte_malloc.h>
 
@@ -853,7 +857,11 @@ xran_prepare_sectionext_3(struct rte_mbuf *mbuf, struct xran_sectionext3_info *p
                          | (params->layerId << xran_cp_radioapp_sec_ext3_LayerId)
                          | (params->numLayers << xran_cp_radioapp_sec_ext3_NumLayers);
         data_fourth_byte  = params->beamIdAP1;
+#if defined(__arm__) || defined(__aarch64__)
+        ext3_f->data_field.data_field1 = (int32x4_t){data_first_byte, data_second_byte, data_third_byte, data_fourth_byte};
+#else
         ext3_f->data_field.data_field1 = _mm_set_epi32(data_fourth_byte, data_third_byte, data_second_byte, data_first_byte);
+#endif
 
         /* convert byte order */
         tmp = (uint64_t *)ext3_f;
