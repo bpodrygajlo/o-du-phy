@@ -117,11 +117,6 @@ struct xran_ethdi_ctx {
     uint64_t rx_vf_queue_cnt[XRAN_VF_MAX][XRAN_VF_QUEUE_MAX];
 };
 
-enum xran_mbuf_mem_op_id {
-    MBUF_KEEP,
-    MBUF_FREE
-};
-
 extern enum xran_if_state xran_if_current_state;
 
 static inline struct xran_ethdi_ctx *xran_ethdi_get_ctx(void)

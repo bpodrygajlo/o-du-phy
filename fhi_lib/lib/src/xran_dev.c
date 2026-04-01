@@ -502,3 +502,118 @@ xran_init_vfs_mapping(void *pHandle)
 
     return (XRAN_STATUS_SUCCESS);
 }
+
+#define MAX_PACKETS_SENT_PER_SYMBOL 16 // has to be power of 2
+
+// Process the scheduled packets, done once per symbol at OTA time
+void xran_hook_process_tx_packets(void* pHandle, int port, int slot, int symbol) {
+  struct xran_device_ctx *p_dev_ctx = (struct xran_device_ctx *)pHandle;
+  int ring_index = slot % XRAN_N_FE_BUF_LEN;
+  struct rte_ring *ring = p_dev_ctx->hook_cfg.tx_rings[port][ring_index][symbol];
+  void* mbufs[MAX_PACKETS_SENT_PER_SYMBOL];
+  int dequeued = rte_ring_dequeue_burst(ring, mbufs, MAX_PACKETS_SENT_PER_SYMBOL, NULL);
+  struct xran_ethdi_ctx *ctx = xran_ethdi_get_ctx();
+  struct rte_ring *tx_ring = ctx->tx_ring[port];
+  int enqueued = rte_ring_enqueue_burst(tx_ring, mbufs, dequeued, NULL);
+  if (enqueued != dequeued) {
+    rte_panic("Expected to be able to enqueue all the packets on the TX ring\n");
+  }
+}
+
+typedef struct {
+  void* pHandle;
+  int port;
+  sym_ota_fn sym_ota_fn;
+  void *sym_ota_fn_args;
+} callback_args_t;
+
+int32_t send_packets(void* arg, struct xran_sense_of_time* p_sense_of_time) {
+  callback_args_t *cb_args = arg;
+  int mu = xran_get_conf_numerology(cb_args->pHandle);
+  int slot_in_frame = p_sense_of_time->nSlotIdx + p_sense_of_time->nSubframeIdx * (1 << mu);
+  xran_hook_process_tx_packets(cb_args->pHandle, cb_args->port, slot_in_frame, p_sense_of_time->nSymIdx);
+  if (cb_args->sym_ota_fn) {
+    cb_args->sym_ota_fn(cb_args->sym_ota_fn_args, p_sense_of_time);
+  }
+}
+
+void xran_hook_install(
+  void *pHandle,
+  process_uplane_fn process_uplane_fn_p,
+  void *process_uplane_fn_args,
+  process_cplane_fn process_cplane_fn_p,
+  void *process_cplane_fn_args,
+  sym_ota_fn sym_ota_fn_p,
+  void *sym_ota_fn_args,
+  int mu)
+{
+  static bool installed = false;
+  if (installed) rte_panic("Can only install once for one numerology\n");
+  installed = true;
+
+  // Workaround - indicate XRAN memory is ready so packet processor starts
+  struct xran_device_ctx *p_dev_ctx = (struct xran_device_ctx *)pHandle;
+  p_dev_ctx->xran2phy_mem_ready = 1;
+
+  if (mu != xran_get_conf_numerology(pHandle)) {
+    rte_panic("Can only use numerlogy %d as configured during init\n", xran_get_conf_numerology(pHandle));
+  }
+
+  p_dev_ctx->hook_cfg.process_uplane_fn = process_uplane_fn_p;
+  p_dev_ctx->hook_cfg.process_uplane_fn_args = process_uplane_fn_args;
+  p_dev_ctx->hook_cfg.process_cplane_fn = process_cplane_fn_p;
+  p_dev_ctx->hook_cfg.process_cplane_fn_args = process_cplane_fn_args;
+
+  struct xran_ethdi_ctx *ctx = xran_ethdi_get_ctx();
+  for (int port = 0; port < ctx->io_cfg.num_vfs; port++) {
+    int ring_index = 0;
+    for (int slot = 0; slot < XRAN_N_FE_BUF_LEN; slot++) {
+      for (int symbol = 0; symbol < XRAN_SYMBOLNUMBER_MAX; symbol++) {
+        char ring_name[RTE_RING_NAMESIZE];
+        snprintf(ring_name, RTE_DIM(ring_name), "%s_%d_%d", "hook_tx_ring", port, ring_index++);
+        struct rte_ring *ring = rte_ring_create(ring_name, MAX_PACKETS_SENT_PER_SYMBOL, SOCKET_ID_ANY, RING_F_SC_DEQ);
+        if (ring == NULL) rte_panic("Cannot allocate rte_ring\n");
+        p_dev_ctx->hook_cfg.tx_rings[port][slot][symbol] = ring;
+      }
+    }
+  }
+
+  // Setup a callback each OTA symbol to send packets from per-symbol rings into the TX ring
+  static struct xran_sense_of_time xran_sense_of_time[XRAN_SYMBOLNUMBER_MAX];
+  static callback_args_t cb_args = {0};
+  cb_args.port = 0;
+  cb_args.pHandle = pHandle;
+  cb_args.sym_ota_fn = sym_ota_fn_p;
+  cb_args.sym_ota_fn_args = sym_ota_fn_args;
+  for (int i = 0; i < XRAN_SYMBOLNUMBER_MAX; i++) {
+    xran_reg_sym_cb(pHandle, send_packets, &cb_args, &xran_sense_of_time[i], i, XRAN_CB_SYM_OTA_TIME);
+  }
+}
+
+// Schedule packet for slot and symbol
+void xran_hook_schedule_packet(void *pHandle, struct rte_mbuf *mbuf, int port,
+                               enum xran_pkt_dir direction, int ru_port_id,
+                               int slot, int symbol) {
+  void *ret = rte_pktmbuf_prepend(mbuf, sizeof(struct rte_ether_hdr));
+  if (ret == NULL) rte_panic("not enough headroom for ethernet header");
+  struct xran_device_ctx *p_dev_ctx = (struct xran_device_ctx *)pHandle;
+  int vf_id = xran_map_ecpriPcid_to_vf(pHandle, direction, 0, ru_port_id);
+  struct xran_ethdi_ctx *ctx = xran_ethdi_get_ctx();
+
+  mbuf->port = ctx->io_cfg.port[vf_id];
+  xran_add_eth_hdr_vlan(&ctx->entities[vf_id][ID_O_RU], ETHER_TYPE_ECPRI, mbuf);
+
+  struct rte_ring *ring = p_dev_ctx->hook_cfg.tx_rings[port][slot][symbol];
+  int res = rte_ring_enqueue(ring, mbuf);
+  if (res != 0) rte_panic("Cannot enqueue to ring");
+}
+
+int xran_hook_send_packet(void *pHandle, struct rte_mbuf *mbuf, int port, enum xran_pkt_dir direction, int ru_port_id) {
+  void *ret = rte_pktmbuf_prepend(mbuf, sizeof(struct rte_ether_hdr));
+  if (ret == NULL) rte_panic("not enough headroom for ethernet header");
+  int vf_id = xran_map_ecpriPcid_to_vf(pHandle, direction, 0, ru_port_id);
+  if (xran_ethdi_mbuf_send(mbuf, ETHER_TYPE_ECPRI, vf_id) == 1) {
+    return 0;
+  }
+  return 1;
+}

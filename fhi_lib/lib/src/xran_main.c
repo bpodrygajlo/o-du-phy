@@ -1680,9 +1680,31 @@ int32_t handle_ecpri_ethertype(struct rte_mbuf* pkt_q[], uint16_t xport_id, stru
         }
     else
 {
+    struct xran_sense_of_time sense_of_time;
+    if (p_dev_ctx->hook_cfg.process_uplane_fn || p_dev_ctx->hook_cfg.process_cplane_fn) {
+        int mu = p_dev_ctx->fh_cfg.frame_conf.nNumerology;
+        int32_t slots = xran_lib_ota_sym_idx[p_dev_ctx->xran_port_id] / XRAN_NUM_OF_SYMBOL_PER_SLOT;
+        int num_slots_per_frame = 10 << mu;
+        int num_slots_per_subframe = 1 << mu;
+        int frame = slots / num_slots_per_frame;
+        int subframe = (slots % num_slots_per_frame) / num_slots_per_subframe;
+        int slot = slots - frame * num_slots_per_frame - subframe * num_slots_per_subframe;
+        int symbol = xran_lib_ota_sym_idx[p_dev_ctx->xran_port_id] % XRAN_NUM_OF_SYMBOL_PER_SLOT;
+        sense_of_time.tti_counter = xran_lib_ota_sym_idx[p_dev_ctx->xran_port_id];
+        sense_of_time.nFrameIdx = xran_getSfnSecStart() + frame;
+        sense_of_time.nSymIdx = symbol;
+        sense_of_time.nSubframeIdx = subframe;
+        sense_of_time.nSlotIdx = slot;
+        sense_of_time.type_of_event = XRAN_CB_SYM_OTA_TIME;
+        sense_of_time.nSecond = timing_get_current_second();
+    }
         for (i = 0; i < num_data; i++)
     {
-            ret = process_mbuf(pkt_data[i], (void*)p_dev_ctx, p_cid);
+            if (p_dev_ctx->hook_cfg.process_uplane_fn) {
+                 ret = p_dev_ctx->hook_cfg.process_uplane_fn(pkt_data[i], p_dev_ctx->hook_cfg.process_uplane_fn_args, p_cid, xport_id, &sense_of_time);
+            } else {
+                ret = process_mbuf(pkt_data[i], (void*)p_dev_ctx, p_cid);
+            }
             if (ret == MBUF_FREE)
                 rte_pktmbuf_free(pkt_data[i]);
     }
@@ -1692,7 +1714,11 @@ int32_t handle_ecpri_ethertype(struct rte_mbuf* pkt_q[], uint16_t xport_id, stru
             t1 = MLogXRANTick();
             if (p_dev_ctx->fh_init.io_cfg.id == O_RU)
         {
-                ret = process_cplane(pkt_control[i], (void*)p_dev_ctx);
+                if (p_dev_ctx->hook_cfg.process_cplane_fn) {
+                  ret = p_dev_ctx->hook_cfg.process_cplane_fn(pkt_control[i], p_dev_ctx->hook_cfg.process_cplane_fn_args, xport_id, &sense_of_time);
+                } else {
+                  ret = process_cplane(pkt_control[i], (void*)p_dev_ctx);
+                }
                 p_dev_ctx->fh_counters.rx_counter++;
                 if (ret == MBUF_FREE)
                     rte_pktmbuf_free(pkt_control[i]);
@@ -3986,10 +4012,12 @@ xran_start(void *pHandle)
     char buff[100];
     int i;
     struct xran_device_ctx * p_xran_dev_ctx = xran_dev_get_ctx();
-    struct xran_prb_map * prbMap0 = (struct xran_prb_map *) p_xran_dev_ctx->sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers->pData;
-    for(i = 0; i < XRAN_MAX_SECTIONS_PER_SLOT && i < prbMap0->nPrbElm; i++)
-    {
-        p_xran_dev_ctx->numSetBFWs_arr[i] = prbMap0->prbMap[i].bf_weight.numSetBFWs;
+    if (p_xran_dev_ctx->sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers) {
+        struct xran_prb_map * prbMap0 = (struct xran_prb_map *) p_xran_dev_ctx->sFrontHaulRxPrbMapBbuIoBufCtrl[0][0][0].sBufferList.pBuffers->pData;
+        for(i = 0; i < XRAN_MAX_SECTIONS_PER_SLOT && i < prbMap0->nPrbElm; i++)
+        {
+            p_xran_dev_ctx->numSetBFWs_arr[i] = prbMap0->prbMap[i].bf_weight.numSetBFWs;
+        }
     }
 
     if(xran_get_if_state() == XRAN_RUNNING) {

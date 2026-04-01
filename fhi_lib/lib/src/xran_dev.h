@@ -40,6 +40,7 @@ extern "C" {
 #include <rte_timer.h>
 
 #include "xran_fh_o_du.h"
+#include "xran_fh_o_ru.h"
 #include "xran_prach_cfg.h"
 #include "xran_up_api.h"
 #include "xran_cp_api.h"
@@ -186,6 +187,17 @@ struct xran_prb_elm_proc_info_t {
     uint8_t   numSymsRemaining; /**< Number of symbols for DL CP transmission remaining in this slot */
 };
 
+typedef struct {
+  // Used to replace XRAN packet processing functions
+  process_uplane_fn process_uplane_fn;
+  void *process_uplane_fn_args;
+  process_cplane_fn process_cplane_fn;
+  void *process_cplane_fn_args;
+
+  // Used to schedule TX in the future.
+  struct rte_ring *tx_rings[XRAN_VF_MAX][XRAN_N_FE_BUF_LEN][XRAN_SYMBOLNUMBER_MAX];
+} hook_cfg_t;
+
 struct __rte_cache_aligned xran_device_ctx
 {
     uint8_t sector_id;
@@ -325,6 +337,7 @@ struct __rte_cache_aligned xran_device_ctx
     uint8_t technology[XRAN_MAX_DSS_PERIODICITY];   /**< technology array represents slot is LTE(0)/NR(1) */
     /* Keeps track of how many sections are processed while parsing C-plan packet */
     uint8_t sectiondb_elm[XRAN_MAX_SECTIONDB_CTX][XRAN_DIR_MAX][XRAN_COMPONENT_CARRIERS_MAX][XRAN_MAX_ANTENNA_NR * 2 + XRAN_MAX_ANT_ARRAY_ELM_NR];
+    hook_cfg_t hook_cfg;
 };
 
 struct xran_eaxcid_config *xran_get_conf_eAxC(void *pHandle);

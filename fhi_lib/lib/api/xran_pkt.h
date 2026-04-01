@@ -339,6 +339,11 @@ struct xran_pkt_comm_hdr
     struct xran_ecpri_hdr ecpri_hdr; /**< eCPRI Transport Header */
 } __rte_packed;
 
+enum xran_mbuf_mem_op_id {
+    MBUF_KEEP,
+    MBUF_FREE
+};
+
 #ifdef __cplusplus
 }
 #endif

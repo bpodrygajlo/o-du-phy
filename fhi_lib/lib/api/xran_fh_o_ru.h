@@ -28,7 +28,7 @@
  * @author Intel Corporation
  *
  **/
-
+#pragma once
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -48,6 +48,27 @@ extern "C" {
 #include <getopt.h>
 #include <unistd.h>
 #include "xran_fh_o_du.h"
+#include "xran_transport.h"
+
+typedef int (*process_uplane_fn)(struct rte_mbuf *pkt, void *handle,
+                                 struct xran_eaxc_info *p_cid,
+                                 uint16_t xport_id,
+                                 struct xran_sense_of_time *sense_of_time);
+typedef int32_t (*process_cplane_fn)(struct rte_mbuf *pkt, void *handle, uint16_t xport_id,
+                                     struct xran_sense_of_time *sense_of_time);
+typedef void (*sym_ota_fn)(void * handle, struct xran_sense_of_time *sense_of_time);
+
+void xran_hook_install(void *pHandle, process_uplane_fn process_uplane_fn_p,
+                       void *process_uplane_fn_args,
+                       process_cplane_fn process_cplane_fn_p,
+                       void *process_cplane_fn_args,
+                       sym_ota_fn sym_ota_fn_p,
+                       void *sym_ota_fn_args,
+                       int mu);
+void xran_hook_schedule_packet(void *pHandle, struct rte_mbuf *mbuf, int port,
+                               enum xran_pkt_dir direction, int ru_port_id,
+                               int slot, int symbol);
+int xran_hook_send_packet(void *pHandle, struct rte_mbuf *mbuf, int port, enum xran_pkt_dir direction, int ru_port_id);
 
 /**
  * @ingroup
